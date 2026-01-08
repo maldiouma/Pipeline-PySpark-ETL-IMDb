@@ -210,6 +210,29 @@ def build_mart_top_genre_year(fact_ratings: DataFrame, bridge: DataFrame) -> Dat
     w = Window.partitionBy("yearkey", "genrekey").orderBy(F.desc("num_votes"))
     ranked = joined.withColumn("rk", F.row_number().over(w))
     return ranked.where(F.col("rk") <= 10).select("yearkey", "genrekey", "titlekey", "avg_rating", "num_votes", "rk")
+    
+def build_mart_top_genre_year_param(
+    fact_ratings: DataFrame, bridge: DataFrame, min_votes: int = 0, top_n: int = 10
+) -> DataFrame:
+    joined = fact_ratings.join(bridge, "titlekey", "inner").where(F.col("num_votes") >= F.lit(min_votes))
+    w = Window.partitionBy("yearkey", "genrekey").orderBy(F.desc("num_votes"))
+    ranked = joined.withColumn("rk", F.row_number().over(w))
+    return ranked.where(F.col("rk") <= top_n).select(
+        "yearkey", "genrekey", "titlekey", "avg_rating", "num_votes", "rk"
+    )
+    
+def build_mart_top_year_by_rating(fact_ratings: DataFrame, min_votes: int = 0, top_n: int = 10) -> DataFrame:
+    filtered = fact_ratings.where(F.col("num_votes") >= F.lit(min_votes))
+    w = Window.partitionBy("yearkey").orderBy(F.desc("avg_rating"))
+    ranked = filtered.withColumn("rk", F.row_number().over(w))
+    return ranked.where(F.col("rk") <= top_n).select("yearkey", "titlekey", "avg_rating", "num_votes", "rk")
+    
+def build_mart_rating_distribution(fact_ratings: DataFrame) -> DataFrame:
+    buckets = fact_ratings.withColumn("rating_bucket", F.floor(F.col("avg_rating") * 2) / 2.0)
+    return (
+        buckets.groupBy("yearkey", "rating_bucket").agg(F.count("*").alias("count"))
+        .orderBy("yearkey", "rating_bucket")
+    )
 
 
 def write_parquet(df: DataFrame, path: Path, partition_cols: Optional[list[str]] = None) -> None:
@@ -227,6 +250,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--download", action="store_true", help="Download IMDb files before running")
     parser.add_argument("--overwrite-download", action="store_true", help="Force re-download raw files")
     parser.add_argument("--show-counts", action="store_true", help="Afficher les volumes après chaque étape")
+    parser.add_argument("--min-votes", type=int, default=1000, help="Seuil minimal de votes pour les TOPs")
+    parser.add_argument("--top-n", type=int, default=10, help="Nombre d'éléments à conserver dans les TOPs")
     return parser.parse_args(argv)
 
 
@@ -252,7 +277,11 @@ def main(argv: list[str] | None = None) -> None:
     fact_ratings = build_fact_ratings(titles_stg, ratings_stg)
 
     mart_year_kpi = build_mart_year_kpi(fact_ratings)
-    mart_top_genre_year = build_mart_top_genre_year(fact_ratings, bridge_title_genre)
+    mart_top_genre_year = build_mart_top_genre_year_param(
+        fact_ratings, bridge_title_genre, min_votes=args.min_votes, top_n=args.top_n
+    )
+    mart_top_year_by_rating = build_mart_top_year_by_rating(fact_ratings, min_votes=args.min_votes, top_n=args.top_n)
+    mart_rating_distribution = build_mart_rating_distribution(fact_ratings)
 
     if args.show_counts:
         print("[stats] titles_stg:", titles_stg.count())
@@ -264,6 +293,8 @@ def main(argv: list[str] | None = None) -> None:
         print("[stats] fact_ratings:", fact_ratings.count())
         print("[stats] mart_year_kpi:", mart_year_kpi.count())
         print("[stats] mart_top_genre_year:", mart_top_genre_year.count())
+        print("[stats] mart_top_year_by_rating:", mart_top_year_by_rating.count())
+        print("[stats] mart_rating_distribution:", mart_rating_distribution.count())
 
     args.dw_dir.mkdir(parents=True, exist_ok=True)
     args.marts_dir.mkdir(parents=True, exist_ok=True)
@@ -276,6 +307,8 @@ def main(argv: list[str] | None = None) -> None:
 
     write_parquet(mart_year_kpi, args.marts_dir / "mart_year_kpi")
     write_parquet(mart_top_genre_year, args.marts_dir / "mart_top_genre_year")
+    write_parquet(mart_top_year_by_rating, args.marts_dir / "mart_top_year_by_rating")
+    write_parquet(mart_rating_distribution, args.marts_dir / "mart_rating_distribution")
 
     print("[done] DW written to", args.dw_dir)
     print("[done] Marts written to", args.marts_dir)

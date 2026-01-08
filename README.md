@@ -81,3 +81,17 @@ Le script crée les dossiers `dw/` et `marts/` si besoin, écrase en mode overwr
    - Les comptes affichés par `--show-counts` permettent de valider le nettoyage.
    - Les Parquet doivent exister dans `dw/` et `marts/`; `fact_ratings` est partitionné par `yearkey`.
    - Si une erreur JVM survient en local, privilégier Colab ou un JDK 11+.
+
+## Options avancées et nouveaux marts
+- Options CLI supplémentaires :
+   - `--min-votes` : seuil minimal de votes pour filtrer les TOPs (défaut 1000).
+   - `--top-n` : taille des TOPs (défaut 10).
+- Nouveaux marts générés :
+   - `marts/mart_top_year_by_rating` : TOP par année selon `avg_rating` (respecte `min-votes` et `top-n`).
+   - `marts/mart_rating_distribution` : histogramme par année des notes (`avg_rating`) par palier 0.5.
+
+Ces ajouts permettent de répondre aux besoins du TP (distributions de notes, TOPs robustes avec seuils). Exécuter le script avec les options pour ajuster le comportement :
+
+```bash
+python src/etl_imdb.py --raw-dir raw --dw-dir dw --marts-dir marts --min-votes 2000 --top-n 15 --show-counts
+```

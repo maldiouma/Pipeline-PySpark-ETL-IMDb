@@ -1,0 +1,16 @@
+# Environnement et artefacts locaux
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+
+# Données et sorties volumineuses
+raw/
+dw/
+marts/
+*.parquet
+*.gz
+
+# OS/IDE
+.DS_Store
+Thumbs.db
+.vscode/
